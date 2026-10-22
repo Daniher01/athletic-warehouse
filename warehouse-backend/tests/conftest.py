@@ -1,12 +1,23 @@
 from collections.abc import Generator
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
+import jwt
 import pytest
 from clickhouse_connect.driver.client import Client
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
+from warehouse_backend.application.auth.interfaces import TokenVerifierPort
 from warehouse_backend.application.ports.warehouse_repository import WarehouseRepositoryPort
 from warehouse_backend.config import Settings
+from warehouse_backend.domain.auth.exceptions import (
+    InvalidTokenError,
+    TokenExpiredError,
+)
+from warehouse_backend.domain.auth.models import AuthenticatedUser
 from warehouse_backend.domain.models import (
     Category,
     Club,
@@ -19,6 +30,7 @@ from warehouse_backend.infrastructure.clickhouse.client import create_clickhouse
 from warehouse_backend.infrastructure.clickhouse.repository import ClickHouseWarehouseRepository
 from warehouse_backend.main import app
 from warehouse_backend.presentation.api.dependencies import (
+    get_token_verifier,
     get_warehouse_repository,
 )
 
@@ -65,6 +77,100 @@ class InMemoryWarehouseRepository(WarehouseRepositoryPort):
         return self.categories.get(category_id)
 
 
+# Generate RSA key pair once for test signing
+_TEST_PRIVATE_KEY = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048,
+    backend=default_backend(),
+)
+_TEST_PUBLIC_KEY = _TEST_PRIVATE_KEY.public_key()
+
+
+def create_test_jwt(
+    sub: str = "test-user-id",
+    username: str = "test_user",
+    roles: list[str] | None = None,
+    groups: list[str] | None = None,
+    department_id: str | None = None,
+    issuer: str = "http://localhost:8080/realms/sports-club",
+    audience: str = "warehouse-backend-api",
+    expires_in_seconds: int = 3600,
+    private_key: Any = None,
+) -> str:
+    key_to_use = private_key or _TEST_PRIVATE_KEY
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
+        "sub": sub,
+        "preferred_username": username,
+        "email": f"{username}@example.com",
+        "iss": issuer,
+        "aud": audience,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(seconds=expires_in_seconds)).timestamp()),
+        "realm_access": {"roles": roles or []},
+        "groups": groups or [],
+    }
+    if department_id:
+        payload["department_id"] = department_id
+
+    headers = {"kid": "test-key-id", "alg": "RS256"}
+    return jwt.encode(payload, key_to_use, algorithm="RS256", headers=headers)
+
+
+class MockTokenVerifier(TokenVerifierPort):
+    """Token verifier implementation for test suites verifying against _TEST_PUBLIC_KEY."""
+
+    def __init__(self, expected_issuer: str = "http://localhost:8080/realms/sports-club") -> None:
+        self.expected_issuer = expected_issuer
+
+    async def verify_token(self, token: str) -> AuthenticatedUser:
+        if not token:
+            raise InvalidTokenError("Empty token.")
+
+        try:
+            payload = jwt.decode(
+                token,
+                _TEST_PUBLIC_KEY,
+                algorithms=["RS256"],
+                audience="warehouse-backend-api",
+                issuer=self.expected_issuer,
+            )
+        except jwt.ExpiredSignatureError as e:
+            raise TokenExpiredError("Token has expired.") from e
+        except Exception as e:
+            raise InvalidTokenError(str(e)) from e
+
+        roles = set(payload.get("realm_access", {}).get("roles", []))
+        groups = tuple(payload.get("groups", []))
+        departments: set[str] = set()
+
+        for group in groups:
+            parts = [p.strip().lower() for p in group.strip("/").split("/") if p.strip()]
+            if "departamentos" in parts:
+                idx = parts.index("departamentos") + 1
+                if idx < len(parts):
+                    departments.add(parts[idx])
+            elif parts:
+                departments.add(parts[-1])
+
+        if "department_id" in payload:
+            departments.add(str(payload["department_id"]).strip().lower())
+
+        return AuthenticatedUser(
+            user_id=str(payload["sub"]),
+            username=str(payload.get("preferred_username", payload["sub"])),
+            email=payload.get("email"),
+            roles=frozenset(roles),
+            groups=groups,
+            departments=frozenset(departments),
+        )
+
+
+@pytest.fixture
+def mock_verifier() -> MockTokenVerifier:
+    return MockTokenVerifier()
+
+
 @pytest.fixture
 def in_memory_repo() -> InMemoryWarehouseRepository:
     repo = InMemoryWarehouseRepository()
@@ -88,8 +194,12 @@ def in_memory_repo() -> InMemoryWarehouseRepository:
 
 
 @pytest.fixture
-def test_client(in_memory_repo: InMemoryWarehouseRepository) -> Generator[TestClient, None, None]:
+def test_client(
+    in_memory_repo: InMemoryWarehouseRepository,
+    mock_verifier: MockTokenVerifier,
+) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_warehouse_repository] = lambda: in_memory_repo
+    app.dependency_overrides[get_token_verifier] = lambda: mock_verifier
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()

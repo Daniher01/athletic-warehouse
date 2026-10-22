@@ -10,6 +10,10 @@ get {
   auth: none
 }
 
+headers {
+  ~Authorization: Bearer {{authToken}}
+}
+
 params:query {
   limit: 50
   ~player_id: 33333333-3333-3333-3333-333333333301

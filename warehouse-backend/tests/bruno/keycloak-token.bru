@@ -1,0 +1,19 @@
+meta {
+  name: Keycloak Get User Token
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{keycloakUrl}}/realms/{{realm}}/protocol/openid-connect/token
+  body: formUrlEncoded
+  auth: none
+}
+
+body:form-urlencoded {
+  client_id: warehouse-backend-api
+  client_secret: backend-api-secret-123
+  username: coach_mikel
+  password: test_password_123
+  grant_type: password
+}

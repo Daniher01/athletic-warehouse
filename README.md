@@ -67,20 +67,22 @@ git pull origin main
 
 ---
 
-### Step 2: Spin Up Infrastructure (ClickHouse)
+### Step 2: Spin Up Infrastructure (ClickHouse, Keycloak & Backend)
 
-Start the ClickHouse columnar engine with automated DDL initialization and seed fixtures:
+Start all services (or select ones) with automated DDL initialization, seed fixtures, and realm import:
 
 ```bash
-docker compose up -d clickhouse
+# Start all core services in background
+docker compose up -d clickhouse keycloak warehouse-backend
 ```
 
-Once running, verify ClickHouse health:
-- **Ping Endpoint:** `http://localhost:8123/ping` (returns `Ok.`)
-- **Web Query Interface (Play):** [http://localhost:8123/play](http://localhost:8123/play)
-  - Default User: `default`
-  - Default Password: `clickhouse_password`
-  - Database: `athletic_warehouse`
+Once running:
+- **FastAPI OpenAPI Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **FastAPI Health Check:** [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+- **ClickHouse Health:** `http://localhost:8123/ping` (returns `Ok.`)
+- **ClickHouse Play UI:** [http://localhost:8123/play](http://localhost:8123/play) (user: `default`, password: `clickhouse_password`, db: `athletic_warehouse`)
+- **Keycloak Admin Console:** [http://localhost:8080](http://localhost:8080) (user: `admin`, password: `admin_password`)
+- For complete Keycloak RBAC setup, test users, and client configuration, refer to [infra/keycloak/README.md](file:///infra/keycloak/README.md).
 
 #### Exploring ClickHouse with GUI Tools (DbGate / DBeaver)
 
@@ -118,9 +120,9 @@ docker compose exec clickhouse clickhouse-client \
 
 ---
 
-### Step 3: Run the Warehouse Backend
+### Step 3: Run the Warehouse Backend Locally (Optional for Development)
 
-Navigate to `warehouse-backend/` and start the FastAPI service:
+If you prefer running the backend natively outside Docker with hot-reload:
 
 ```bash
 cd warehouse-backend
@@ -138,26 +140,29 @@ Once started:
 
 #### 1. Ingest Raw Tableflow Form Payload
 
-Send a wellness record through the Tableflow webhook endpoint:
+Send a wellness record through the Tableflow webhook endpoint (authenticated via shared webhook secret or Bearer JWT):
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/ingest/tableflow \
   -H "Content-Type: application/json" \
+  -H "X-Tableflow-Secret: tableflow-webhook-dev-secret" \
   -d '{
     "club_id": "11111111-1111-1111-1111-111111111111",
-    "department_id": "preparacion_fisica",
+    "department_id": "preparacion-fisica",
     "form_name": "wellness",
+    "category_id": "22222222-2222-2222-2222-222222222201",
     "records": [
       {
         "player_id": "33333333-3333-3333-3333-333333333301",
-        "category_id": "22222222-2222-2222-2222-222222222201",
         "metric_date": "2026-10-22",
-        "rpe": 8,
-        "sleep_quality": 9,
-        "muscle_soreness": 3,
-        "stress_level": 2,
-        "fatigue_level": 4,
-        "notes": "Optimal recovery after high-intensity session"
+        "data": {
+          "rpe": 8,
+          "sleep_quality": 9,
+          "muscle_soreness": 3,
+          "stress_level": 2,
+          "fatigue_level": 4,
+          "notes": "Optimal recovery after high-intensity session"
+        }
       }
     ]
   }'
@@ -165,18 +170,28 @@ curl -X POST http://localhost:8000/api/v1/ingest/tableflow \
 
 #### 2. Query Normalized Silver Data
 
-Verify the streaming Materialized View extracted and typed the record into `fact_wellness_records`:
+Obtain an analyst token from Keycloak and query `fact_wellness_records`:
 
 ```bash
-curl "http://localhost:8000/api/v1/wellness?club_id=11111111-1111-1111-1111-111111111111&metric_date=2026-10-22"
+# Obtain Bearer token
+TOKEN=$(curl -s -X POST "http://localhost:8080/realms/sports-club/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=warehouse-backend-api" \
+  -d "client_secret=backend-api-secret-123" \
+  -d "username=coach_mikel" \
+  -d "password=test_password_123" \
+  -d "grant_type=password" | jq -r .access_token)
+
+# Query wellness records
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/v1/wellness?club_id=11111111-1111-1111-1111-111111111111&limit=10"
 ```
 
 #### 3. Test Endpoints with Bruno
 
 You can also test all API endpoints visually using [Bruno](https://www.usebruno.com/):
 - Open Bruno -> **Open Collection** -> select `warehouse-backend/tests/bruno`.
-- Run requests: `Health Check`, `Ingest Tableflow Records`, `Ingest Tableflow (Invalid)`, and `List Wellness Records`.
-
+- Run requests: `Health Check`, `Keycloak Get User Token`, `Get Auth Profile`, `Ingest Tableflow Records`, `Ingest Tableflow (Invalid)`, and `List Wellness Records`.
 
 ---
 
@@ -208,18 +223,21 @@ uv run pytest
 athletic-warehouse/
 ├── docker-compose.yml              # Local container stack (ClickHouse, Keycloak, Metabase, Tableflow)
 ├── infra/
-│   └── clickhouse/
-│       ├── init/
-│       │   └── 01_schema.sql       # Production DDL (dimensions, bronze, silver, materialized view)
-│       └── seeds/
-│           └── 02_fixtures.sql     # Seed data for dev/test environments
+│   ├── clickhouse/
+│   │   ├── init/
+│   │   │   └── 01_schema.sql       # Production DDL (dimensions, bronze, silver, materialized view)
+│   │   └── seeds/
+│   │       └── 02_fixtures.sql     # Seed data for dev/test environments
+│   └── keycloak/
+│       ├── realm-export.json       # OIDC Realm export (roles, clients, groups, test users)
+│       └── README.md               # Keycloak operations and token generation guide
 ├── warehouse-backend/
 │   ├── src/warehouse_backend/
 │   │   ├── domain/                 # Pure domain models & exceptions (zero external deps)
 │   │   ├── application/            # Use cases & repository ports (business orchestration)
-│   │   ├── infrastructure/         # ClickHouse adapters & migration runner
+│   │   ├── infrastructure/         # Keycloak verifier, ClickHouse adapters & migrations
 │   │   └── presentation/           # FastAPI routers, endpoints & schemas
-│   ├── tests/                      # Unit & integration test suites
+│   ├── tests/                      # Unit, integration & Bruno test suites
 │   └── pyproject.toml              # Dependencies & tooling configurations
 └── tests/                          # Root integration & DDL tests
 ```

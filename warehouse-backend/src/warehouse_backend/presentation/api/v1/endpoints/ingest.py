@@ -9,9 +9,14 @@ from warehouse_backend.application.use_cases.ingest_records import (
     IngestionResult,
     IngestTableflowRecordsUseCase,
 )
+from warehouse_backend.domain.auth.models import AuthenticatedUser
 from warehouse_backend.domain.exceptions import MissingPlayerIdError
 from warehouse_backend.domain.models import FormRecord
-from warehouse_backend.presentation.api.dependencies import get_ingest_use_case
+from warehouse_backend.presentation.api.dependencies import (
+    check_department_access,
+    get_ingest_use_case,
+    verify_tableflow_webhook_auth,
+)
 
 router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 
@@ -43,7 +48,11 @@ class IngestionResponse(BaseModel):
 async def ingest_tableflow(
     payload: TableflowWebhookPayload,
     use_case: Annotated[IngestTableflowRecordsUseCase, Depends(get_ingest_use_case)],
+    auth_user: Annotated[AuthenticatedUser | None, Depends(verify_tableflow_webhook_auth)],
 ) -> IngestionResponse:
+    if auth_user is not None:
+        check_department_access(auth_user, payload.department_id)
+
     domain_records: list[FormRecord] = []
     for item in payload.records:
         if not item.player_id:
