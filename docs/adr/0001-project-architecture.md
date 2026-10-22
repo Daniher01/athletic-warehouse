@@ -26,16 +26,18 @@ Se adopta una arquitectura basada en desacoplamiento de componentes, principios 
 
 ```mermaid
 flowchart TD
-    Staff[Personal Departamental] -->|Carga Excel / CSV| TF[Tableflow Workspaces]
+    Staff[Personal Departamental] -->|1. Autenticación OIDC / SSO| KC
+    Staff -->|2. Carga Excel/CSV según workspace| TF[Tableflow Workspaces]
 
-    subgraph IAM ["Keycloak (IAM & RBAC)"]
+    subgraph IAM ["Keycloak (IAM & RBAC Centralizado)"]
         KC[Keycloak Realm: athletic-club]
-        KC -.->|OIDC / JWT Validation| API[warehouse-backend / FastAPI]
-        KC -.->|SAML / OIDC Groups Mapping| MB[Metabase BI]
+        KC -.->|OIDC SSO & Roles / Workspace Mapping| TF
+        KC -.->|OIDC / JWT Bearer & RBAC| API[warehouse-backend / FastAPI]
+        KC -.->|OIDC / SAML Group Sync & Colecciones| MB[Metabase BI]
     end
 
     subgraph Ingestion ["Ingesta & API Backend"]
-        TF -->|Webhook POST payload + HMAC| API
+        TF -->|Webhook POST payload + HMAC / M2M Token| API
         API -->|Validar Invariante & Auto-aprovisionar| Dim
         API -->|1. Inserción micro-lote append-only| Bronze
     end
@@ -47,6 +49,7 @@ flowchart TD
     end
 
     subgraph BI ["Presentación & Autoservicio"]
+        Staff -->|Autenticación SSO & Acceso Departamental| MB
         MB -->|3. Consultas SQL Columnares Rápidas| Silver
         MB -->|Consultas Filtros & Contexto| Dim
     end
@@ -56,28 +59,49 @@ flowchart TD
 
 ## 3. Especificación Detallada de Componentes
 
-### 3.1. Gestión de Identidad y Acceso (Keycloak IAM & RBAC)
+### 3.1. Gestión Integral de Identidad y Acceso (Keycloak IAM & RBAC Universal)
+
+Keycloak es la **única fuente de verdad de identidad y autorización** transversal a toda la plataforma: **Tableflow**, **warehouse-backend** y **Metabase**.
+
 - **Realm:** `athletic-club`.
-- **Estructura de Grupos por Departamento:**
-  - `/Departamentos/Medico`
-  - `/Departamentos/Preparacion-Fisica`
-  - `/Departamentos/Scouting`
-  - `/Departamentos/Cantera`
-  - `/Departamentos/Direccion-Deportiva`
+- **Estructura Jerárquica de Grupos (Club -> Departamentos):**
+  - `/Athletic-Club/Departamentos/Medico`
+  - `/Athletic-Club/Departamentos/Preparacion-Fisica`
+  - `/Athletic-Club/Departamentos/Scouting`
+  - `/Athletic-Club/Departamentos/Cantera`
+  - `/Athletic-Club/Departamentos/Direccion-Deportiva`
 - **Roles Departamentales:**
-  - `dept_admin`: Gestión departamental, configuración de formularios y supervisión de accesos.
-  - `dept_analyst`: Acceso de solo lectura a dashboards analíticos y reportes en Metabase.
-  - `dept_ingestor`: Permiso de carga e importación de archivos mediante Tableflow.
-- **Propagación de Seguridad:**
-  - `warehouse-backend` valida tokens JWT emitidos por Keycloak mediante JWKS asimétrico.
-  - Metabase sincroniza pertenencia a grupos mediante mapeo OIDC/SAML para restringir colecciones y paneles sensibles por departamento.
+  - `dept_admin`: Administración departamental, supervisión de accesos y configuración de plantillas/formularios.
+  - `dept_analyst`: Visualización y análisis de reportes/dashboards en Metabase.
+  - `dept_ingestor`: Operación de carga e importación de archivos mediante Tableflow.
+
+#### Cobertura y Aplicación de RBAC por Componente:
+
+1. **Tableflow (Autenticación SSO y Aislamiento de Workspaces):**
+   - **Integración:** Cliente OIDC (`tableflow-app`) registrado en Keycloak (Authorization Code Flow con PKCE).
+   - **Mapeo de Workspaces:** Cada departamento del club dispone de un Workspace independiente. Al autenticarse el usuario vía SSO, Tableflow mapea el claim de pertenencia a grupos (`groups: ["/Athletic-Club/Departamentos/Preparacion-Fisica"]`) con el workspace departamental respectivo.
+   - **Control de Acceso:** Solo usuarios con rol `dept_ingestor` o `dept_admin` de ese departamento tienen autorización para subir archivos o gestionar importadores, garantizando que el personal médico no acceda a datos de scouting ni viceversa.
+
+2. **warehouse-backend (FastAPI - Protección de Endpoints y Verificación RBAC):**
+   - **Integración:** Cliente Bearer-only (`warehouse-backend-api`) con validación asimétrica de tokens JWT vía JWKS (`/.well-known/openid-configuration/jwks`).
+   - **Guards de Seguridad:** Dependencias de FastAPI (`Security(verify_jwt_token)`) que extraen y validan roles (`realm_access.roles`) y grupos del usuario (`groups`), asegurando que cualquier operación administrativa o consulta pertenezca al departamento del solicitante.
+   - **Autenticación Machine-to-Machine (M2M) para Webhooks:** Para la ingesta automatizada desde Tableflow, se utiliza un service account (`client_credentials`) de Keycloak o firma de payload HMAC (`X-Tableflow-Signature`) vinculada al secreto departamental, validando que el departamento emisor coincida con la metadata del webhook.
+
+3. **Metabase BI (SSO y Gobernanza de Dashboards por Colecciones):**
+   - **Integración:** Autenticación OpenID Connect / SAML nativa en Metabase sincronizada contra Keycloak.
+   - **Sincronización Automática de Grupos:** Metabase sincroniza dinámicamente la pertenencia a grupos (`Synchronize group memberships`) basándose en los claims de Keycloak.
+   - **Aislamiento Departamental de Datos:**
+     - Colección *Médico* visible únicamente para miembros del grupo `Médico`.
+     - Colección *Preparación Física* visible únicamente para el grupo `Preparación Física`.
+     - Permisos de solo lectura aplicados sobre esquemas y tablas ClickHouse según el grupo asignado.
 
 ### 3.2. Capa de Ingesta (Tableflow)
-- **Workspaces Departamentales:** Se configuran espacios de trabajo aislados en Tableflow que corresponden 1:1 con los departamentos del club.
+- **Autenticación y Sesión:** Operadores autenticados mediante Keycloak OIDC SSO.
+- **Workspaces Departamentales:** Espacios de trabajo aislados correspondientes a los departamentos del club, restringidos según roles Keycloak.
 - **Validación Sintáctica Previa:** Cada formulario (ej. *Wellness Diario*, *GPS Post-Partido*) tiene una plantilla con reglas de validación en cliente (columnas requeridas, formatos numéricos y rangos).
 - **Notificación por Webhook:**
   - Al completar la importación, Tableflow envía una petición `POST` al endpoint `/api/v1/ingest/tableflow` de `warehouse-backend`.
-  - La petición incluye firma HMAC en las cabeceras (`X-Tableflow-Signature`) y el payload estructurado con metadatos del departamento y formulario.
+  - La petición incluye firma HMAC en cabeceras (`X-Tableflow-Signature`) o token M2M de Keycloak, junto al payload estructurado con metadatos del departamento y formulario.
 
 ### 3.3. Servicio de Aplicación (`warehouse-backend` - FastAPI & Clean Architecture)
 Implementado con **Python 3.12+**, **FastAPI** y empaquetado con **`uv`**.
