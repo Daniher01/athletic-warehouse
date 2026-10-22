@@ -14,14 +14,57 @@ async def test_clickhouse_ping(live_repository: ClickHouseWarehouseRepository) -
 
 
 @pytest.mark.asyncio
-async def test_get_seed_club(live_repository: ClickHouseWarehouseRepository) -> None:
+async def test_get_players_by_ids_batch(live_repository: ClickHouseWarehouseRepository) -> None:
     club_id = UUID("11111111-1111-1111-1111-111111111111")
-    club = await live_repository.get_club_by_id(club_id)
+    player_id_1 = UUID("33333333-3333-3333-3333-333333333301")
+    player_id_2 = UUID("33333333-3333-3333-3333-333333333302")
+    missing_id = uuid4()
 
-    assert club is not None
-    assert club.club_id == club_id
-    assert "Athletic Club" in club.name
-    assert club.country == "Spain"
+    players = await live_repository.get_players_by_ids(
+        club_id=club_id,
+        player_ids=[player_id_1, player_id_2, missing_id],
+    )
+
+    assert len(players) == 2
+    assert player_id_1 in players
+    assert player_id_2 in players
+    assert missing_id not in players
+    assert players[player_id_1].first_name == "Iñaki"
+    assert players[player_id_2].first_name == "Nico"
+
+
+@pytest.mark.asyncio
+async def test_auto_provision_players_batch(
+    live_repository: ClickHouseWarehouseRepository,
+) -> None:
+    club_id = UUID("11111111-1111-1111-1111-111111111111")
+    cat_id = UUID("22222222-2222-2222-2222-222222222201")
+    p1_id = uuid4()
+    p2_id = uuid4()
+
+    p1 = Player.create_unverified(
+        player_id=p1_id,
+        club_id=club_id,
+        category_id=cat_id,
+        first_name="BatchPlayer1",
+        last_name="Unverified",
+    )
+    p2 = Player.create_unverified(
+        player_id=p2_id,
+        club_id=club_id,
+        category_id=cat_id,
+        first_name="BatchPlayer2",
+        last_name="Unverified",
+    )
+
+    provisioned = await live_repository.auto_provision_players([p1, p2])
+    assert len(provisioned) == 2
+
+    fetched = await live_repository.get_players_by_ids(club_id, [p1_id, p2_id])
+    assert p1_id in fetched
+    assert p2_id in fetched
+    assert fetched[p1_id].status == PlayerStatus.UNVERIFIED
+    assert fetched[p2_id].status == PlayerStatus.UNVERIFIED
 
 
 @pytest.mark.asyncio

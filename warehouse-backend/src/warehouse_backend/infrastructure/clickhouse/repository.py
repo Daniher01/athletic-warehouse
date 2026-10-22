@@ -6,8 +6,6 @@ from clickhouse_connect.driver.client import Client
 
 from warehouse_backend.application.ports.warehouse_repository import WarehouseRepositoryPort
 from warehouse_backend.domain.models import (
-    Category,
-    Club,
     FormRecord,
     Player,
     PlayerStatus,
@@ -26,16 +24,22 @@ class ClickHouseWarehouseRepository(WarehouseRepositoryPort):
         except Exception:
             return False
 
-    async def get_player_by_id(self, player_id: UUID) -> Player | None:
-        query = """
+    async def get_player_by_id(self, player_id: UUID, club_id: UUID | None = None) -> Player | None:
+        where_parts = ["player_id = %(player_id)s"]
+        params: dict[str, Any] = {"player_id": str(player_id)}
+        if club_id is not None:
+            where_parts.append("club_id = %(club_id)s")
+            params["club_id"] = str(club_id)
+
+        query = f"""
         SELECT
             player_id, club_id, category_id, first_name, last_name,
             nationality, birth_date, position, status, created_at, updated_at
         FROM dim_player FINAL
-        WHERE player_id = %(player_id)s
+        WHERE {" AND ".join(where_parts)}
         LIMIT 1
         """
-        result = self._client.query(query, parameters={"player_id": str(player_id)})
+        result = self._client.query(query, parameters=params)
         rows = result.result_rows
         if not rows:
             return None
@@ -55,7 +59,50 @@ class ClickHouseWarehouseRepository(WarehouseRepositoryPort):
             updated_at=row[10],
         )
 
+    async def get_players_by_ids(self, club_id: UUID, player_ids: list[UUID]) -> dict[UUID, Player]:
+        if not player_ids:
+            return {}
+
+        query = """
+        SELECT
+            player_id, club_id, category_id, first_name, last_name,
+            nationality, birth_date, position, status, created_at, updated_at
+        FROM dim_player FINAL
+        WHERE club_id = %(club_id)s AND player_id IN %(player_ids)s
+        """
+        result = self._client.query(
+            query,
+            parameters={
+                "club_id": str(club_id),
+                "player_ids": [str(pid) for pid in player_ids],
+            },
+        )
+        players: dict[UUID, Player] = {}
+        for row in result.result_rows:
+            p = Player(
+                player_id=row[0],
+                club_id=row[1],
+                category_id=row[2],
+                first_name=row[3],
+                last_name=row[4],
+                nationality=row[5],
+                birth_date=row[6],
+                position=row[7],
+                status=PlayerStatus(row[8]),
+                created_at=row[9],
+                updated_at=row[10],
+            )
+            players[p.player_id] = p
+        return players
+
     async def auto_provision_player(self, player: Player) -> Player:
+        provisioned = await self.auto_provision_players([player])
+        return provisioned[0]
+
+    async def auto_provision_players(self, players: list[Player]) -> list[Player]:
+        if not players:
+            return []
+
         columns = [
             "player_id",
             "club_id",
@@ -83,9 +130,10 @@ class ClickHouseWarehouseRepository(WarehouseRepositoryPort):
                 player.created_at,
                 player.updated_at,
             ]
+            for player in players
         ]
         self._client.insert("dim_player", data, column_names=columns)
-        return player
+        return players
 
     async def insert_raw_records(self, records: list[FormRecord]) -> int:
         if not records:
@@ -171,44 +219,3 @@ class ClickHouseWarehouseRepository(WarehouseRepositoryPort):
                 )
             )
         return records
-
-    async def get_club_by_id(self, club_id: UUID) -> Club | None:
-        query = """
-        SELECT club_id, name, country, created_at, updated_at
-        FROM dim_club FINAL
-        WHERE club_id = %(club_id)s
-        LIMIT 1
-        """
-        result = self._client.query(query, parameters={"club_id": str(club_id)})
-        rows = result.result_rows
-        if not rows:
-            return None
-        row = rows[0]
-        return Club(
-            club_id=row[0],
-            name=row[1],
-            country=row[2],
-            created_at=row[3],
-            updated_at=row[4],
-        )
-
-    async def get_category_by_id(self, category_id: UUID) -> Category | None:
-        query = """
-        SELECT category_id, club_id, name, sort_order, created_at, updated_at
-        FROM dim_category FINAL
-        WHERE category_id = %(category_id)s
-        LIMIT 1
-        """
-        result = self._client.query(query, parameters={"category_id": str(category_id)})
-        rows = result.result_rows
-        if not rows:
-            return None
-        row = rows[0]
-        return Category(
-            category_id=row[0],
-            club_id=row[1],
-            name=row[2],
-            sort_order=row[3],
-            created_at=row[4],
-            updated_at=row[5],
-        )

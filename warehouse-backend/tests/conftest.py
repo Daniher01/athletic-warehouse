@@ -46,12 +46,28 @@ class InMemoryWarehouseRepository(WarehouseRepositoryPort):
     async def ping(self) -> bool:
         return True
 
-    async def get_player_by_id(self, player_id: UUID) -> Player | None:
-        return self.players.get(player_id)
+    async def get_player_by_id(self, player_id: UUID, club_id: UUID | None = None) -> Player | None:
+        p = self.players.get(player_id)
+        if p and club_id is not None and p.club_id != club_id:
+            return None
+        return p
+
+    async def get_players_by_ids(self, club_id: UUID, player_ids: list[UUID]) -> dict[UUID, Player]:
+        result: dict[UUID, Player] = {}
+        for pid in player_ids:
+            p = self.players.get(pid)
+            if p and p.club_id == club_id:
+                result[pid] = p
+        return result
 
     async def auto_provision_player(self, player: Player) -> Player:
         self.players[player.player_id] = player
         return player
+
+    async def auto_provision_players(self, players: list[Player]) -> list[Player]:
+        for player in players:
+            self.players[player.player_id] = player
+        return players
 
     async def insert_raw_records(self, records: list[FormRecord]) -> int:
         self.raw_records.extend(records)
@@ -69,12 +85,6 @@ class InMemoryWarehouseRepository(WarehouseRepositoryPort):
         if club_id:
             results = [r for r in results if r.club_id == club_id]
         return results[:limit]
-
-    async def get_club_by_id(self, club_id: UUID) -> Club | None:
-        return self.clubs.get(club_id)
-
-    async def get_category_by_id(self, category_id: UUID) -> Category | None:
-        return self.categories.get(category_id)
 
 
 # Generate RSA key pair once for test signing

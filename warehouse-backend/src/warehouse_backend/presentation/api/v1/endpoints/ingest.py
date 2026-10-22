@@ -11,7 +11,7 @@ from warehouse_backend.application.use_cases.ingest_records import (
 )
 from warehouse_backend.domain.auth.models import AuthenticatedUser
 from warehouse_backend.domain.exceptions import MissingPlayerIdError
-from warehouse_backend.domain.models import FormRecord
+from warehouse_backend.domain.models import FormRecord, generate_player_id
 from warehouse_backend.presentation.api.dependencies import (
     check_department_access,
     get_ingest_use_case,
@@ -23,7 +23,8 @@ router = APIRouter(prefix="/ingest", tags=["Ingestion"])
 
 class TableflowRecordItem(BaseModel):
     record_id: UUID | None = None
-    player_id: UUID
+    player_id: UUID | None = None
+    player_slug: str | None = None
     category_id: UUID | None = None
     metric_date: date
     data: dict[str, Any] = Field(default_factory=dict)
@@ -54,19 +55,26 @@ async def ingest_tableflow(
         check_department_access(auth_user, payload.department_id)
 
     domain_records: list[FormRecord] = []
-    for item in payload.records:
-        if not item.player_id:
+    for idx, item in enumerate(payload.records):
+        effective_player_id: UUID | None = None
+        if item.player_id and item.player_id != UUID(int=0):
+            effective_player_id = item.player_id
+        elif item.player_slug and item.player_slug.strip():
+            effective_player_id = generate_player_id(payload.club_id, item.player_slug.strip())
+
+        if effective_player_id is None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Form record rejected: 'player_id' is required.",
+                detail=f"Record at index {idx} is missing required 'player_id' or 'player_slug'.",
             )
+
         domain_records.append(
             FormRecord(
                 record_id=item.record_id or uuid4(),
                 club_id=payload.club_id,
                 department_id=payload.department_id,
                 form_name=payload.form_name,
-                player_id=item.player_id,
+                player_id=effective_player_id,
                 category_id=item.category_id or payload.category_id,
                 metric_date=item.metric_date,
                 raw_data=item.data,
