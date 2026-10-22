@@ -21,7 +21,7 @@ agent:
   max_concurrent_agents: 2
   max_turns: 30
 codex:
-  command: agy --dangerously-skip-permissions --effort high --print
+  command: agy-app-server
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:
