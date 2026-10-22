@@ -1310,6 +1310,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "chdb" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -1328,6 +1329,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "chdb", specifier = ">=2.0.0" },
     { name = "mypy", specifier = ">=1.11.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
