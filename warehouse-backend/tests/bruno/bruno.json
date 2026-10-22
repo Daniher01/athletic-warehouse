@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Athletic Warehouse Backend",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

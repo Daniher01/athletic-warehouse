@@ -1,0 +1,17 @@
+meta {
+  name: List Wellness Records
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/wellness?limit=50
+  body: none
+  auth: none
+}
+
+params:query {
+  limit: 50
+  ~player_id: 33333333-3333-3333-3333-333333333301
+  ~club_id: 11111111-1111-1111-1111-111111111111
+}
