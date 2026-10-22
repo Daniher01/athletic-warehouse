@@ -1,7 +1,7 @@
 ---
 tracker:
   kind: linear
-  project_slug: "athletic-warehouse"
+  project_slug: "57d97bda7647" # Athletic Warehouse (Linear slugId)
   api_key: "$LINEAR_API_KEY"
   active_states:
     - "Spec Review"
