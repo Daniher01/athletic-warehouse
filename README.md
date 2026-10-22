@@ -67,15 +67,18 @@ git pull origin main
 
 ---
 
-### Step 2: Spin Up Infrastructure (ClickHouse & Keycloak)
+### Step 2: Spin Up Infrastructure (ClickHouse, Keycloak & Backend)
 
-Start ClickHouse and Keycloak with automated DDL initialization, seed fixtures, and realm import:
+Start all services (or select ones) with automated DDL initialization, seed fixtures, and realm import:
 
 ```bash
-docker compose up -d clickhouse keycloak
+# Start all core services in background
+docker compose up -d clickhouse keycloak warehouse-backend
 ```
 
 Once running:
+- **FastAPI OpenAPI Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **FastAPI Health Check:** [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
 - **ClickHouse Health:** `http://localhost:8123/ping` (returns `Ok.`)
 - **ClickHouse Play UI:** [http://localhost:8123/play](http://localhost:8123/play) (user: `default`, password: `clickhouse_password`, db: `athletic_warehouse`)
 - **Keycloak Admin Console:** [http://localhost:8080](http://localhost:8080) (user: `admin`, password: `admin_password`)
@@ -117,9 +120,9 @@ docker compose exec clickhouse clickhouse-client \
 
 ---
 
-### Step 3: Run the Warehouse Backend
+### Step 3: Run the Warehouse Backend Locally (Optional for Development)
 
-Navigate to `warehouse-backend/` and start the FastAPI service:
+If you prefer running the backend natively outside Docker with hot-reload:
 
 ```bash
 cd warehouse-backend

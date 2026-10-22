@@ -1,0 +1,24 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+WORKDIR /app
+
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH="/app/src"
+
+# Copy project manifest and documentation
+COPY pyproject.toml README.md ./
+
+# Install project dependencies
+RUN uv sync --no-dev --no-install-project
+
+# Copy application source code and install project
+COPY src/ ./src/
+RUN uv sync --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8000
+
+CMD ["uvicorn", "warehouse_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

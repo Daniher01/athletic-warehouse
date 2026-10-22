@@ -25,6 +25,25 @@ uv run ruff format --check
 uv run mypy .
 ```
 
+## Running the Service
+
+### Option A: Via Docker Compose (Recommended)
+
+From the project root:
+
+```bash
+# Start backend alongside ClickHouse and Keycloak
+docker compose up -d clickhouse keycloak warehouse-backend
+```
+
+### Option B: Local Development with `uv`
+
+```bash
+cd warehouse-backend
+uv sync
+uv run uvicorn warehouse_backend.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
 ## API Testing with Bruno
 
 A pre-configured [Bruno](https://www.usebruno.com/) collection is located in `tests/bruno/`:
