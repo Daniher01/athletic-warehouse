@@ -4,9 +4,9 @@ Service built with **Python 3.12+**, **FastAPI**, and **`uv`** adhering to **Cle
 
 ## Architecture
 
-- **Domain Layer (`domain/`)**: Pure business models (`Player`, `Club`, `Category`, `FormRecord`, `WellnessRecord`, `AuthenticatedUser`, `DepartmentRole`) and domain exceptions. Zero external dependencies.
-- **Application Layer (`application/`)**: Ingestion use cases, authentication ports (`TokenVerifierPort`), and repository ports (`WarehouseRepositoryPort`). Enforces identity invariants, RBAC policies, and auto-provisions unverified players.
-- **Infrastructure Layer (`infrastructure/`)**: Keycloak RS256 JWKS JWT verifier, ClickHouse adapters (`clickhouse-connect`), migration runner, and repository implementation.
+- **Domain Layer (`domain/`)**: Pure business models (`Player`, `Club`, `Category`, `FormRecord`, `WellnessRecord`, `AuthenticatedUser`, `DepartmentRole`), deterministic natural key slug algorithm (`[initials]-[DDMMYYYY]`), deterministic UUIDv5 player mapping, and domain exceptions. Zero external dependencies.
+- **Application Layer (`application/`)**: Ingestion use cases (`IngestTableflowRecordsUseCase`), authentication ports (`TokenVerifierPort`), and repository ports (`WarehouseRepositoryPort`). Enforces identity invariants, RBAC policies, and batch auto-provisions unverified players into the OLAP store.
+- **Infrastructure Layer (`infrastructure/`)**: Keycloak RS256 JWKS JWT verifier, HMAC-SHA256 webhook cryptographic signature verifier (`TableflowHmacVerifier`), ClickHouse batch adapters (`clickhouse-connect`), migration runner, and repository implementation.
 - **Presentation Layer (`presentation/`)**: FastAPI endpoints (`/health`, `/api/v1/auth/me`, `/api/v1/ingest/tableflow`, `/api/v1/wellness`) and RBAC security dependencies (`get_current_user`, `require_role`, `check_department_access`, `verify_tableflow_webhook_auth`).
 
 ## Verification Commands

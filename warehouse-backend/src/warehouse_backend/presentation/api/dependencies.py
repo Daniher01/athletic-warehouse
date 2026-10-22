@@ -1,3 +1,4 @@
+import hmac
 from collections.abc import Callable
 from functools import lru_cache
 from typing import Annotated
@@ -16,6 +17,7 @@ from warehouse_backend.domain.auth.exceptions import (
     TokenExpiredError,
 )
 from warehouse_backend.domain.auth.models import AuthenticatedUser, DepartmentRole
+from warehouse_backend.infrastructure.auth.hmac_verifier import verify_tableflow_hmac_signature
 from warehouse_backend.infrastructure.auth.keycloak_verifier import KeycloakJwtVerifier
 from warehouse_backend.infrastructure.clickhouse.client import create_clickhouse_client
 from warehouse_backend.infrastructure.clickhouse.repository import ClickHouseWarehouseRepository
@@ -142,18 +144,38 @@ async def verify_tableflow_webhook_auth(
     request: Request,
     app_settings: Annotated[Settings, Depends(get_settings)],
     verifier: Annotated[TokenVerifierPort, Depends(get_token_verifier)],
+    x_tableflow_signature: Annotated[str | None, Header(alias="X-Tableflow-Signature")] = None,
     x_tableflow_secret: Annotated[str | None, Header(alias="X-Tableflow-Secret")] = None,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(http_bearer_scheme)] = None,
 ) -> AuthenticatedUser | None:
-    """Authenticate Tableflow webhook via shared secret header OR Bearer JWT token."""
+    """Authenticate Tableflow webhook via HMAC-SHA256, shared secret, or Bearer JWT token."""
     if not app_settings.auth_enabled:
         return None
 
-    # 1. Check shared secret header
-    if x_tableflow_secret and x_tableflow_secret == app_settings.tableflow_webhook_secret:
-        return None  # Authenticated as trusted system webhook
+    # 1. Check cryptographic HMAC-SHA256 signature over raw body
+    if x_tableflow_signature is not None:
+        raw_body = await request.body()
+        if verify_tableflow_hmac_signature(
+            raw_body=raw_body,
+            secret=app_settings.tableflow_webhook_secret,
+            signature_header=x_tableflow_signature,
+        ):
+            return None  # Authenticated as verified cryptographic webhook
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Invalid 'X-Tableflow-Signature' HMAC-SHA256 digest.",
+        )
 
-    # 2. Check Bearer token
+    # 2. Fallback to shared secret header with constant-time comparison
+    if x_tableflow_secret is not None:
+        if hmac.compare_digest(x_tableflow_secret, app_settings.tableflow_webhook_secret):
+            return None  # Authenticated via shared secret
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Invalid 'X-Tableflow-Secret' header.",
+        )
+
+    # 3. Check Bearer token (Keycloak OIDC)
     if credentials and credentials.credentials:
         try:
             user = await verifier.verify_token(credentials.credentials)
@@ -171,10 +193,10 @@ async def verify_tableflow_webhook_auth(
                 headers={"WWW-Authenticate": "Bearer"},
             ) from err
 
-    # 3. Neither valid secret nor valid token provided
+    # 4. Neither signature, secret, nor token provided
     msg = (
-        "Unauthorized: Tableflow webhook requires a valid 'X-Tableflow-Secret' header "
-        "or Bearer JWT token."
+        "Unauthorized: Tableflow webhook requires a valid 'X-Tableflow-Signature' header, "
+        "'X-Tableflow-Secret' header, or Bearer JWT token."
     )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

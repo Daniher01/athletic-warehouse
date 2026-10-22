@@ -25,30 +25,44 @@ class IngestTableflowRecordsUseCase:
         if not records:
             return IngestionResult(0, 0, 0)
 
-        provisioned_count = 0
-        checked_players: dict[UUID, bool] = {}
+        # 1. Invariant check: validate player_id presence
+        club_player_ids: dict[UUID, set[UUID]] = {}
+        player_category_map: dict[UUID, UUID] = {}
 
         for idx, rec in enumerate(records):
             if not rec.player_id or rec.player_id == UUID(int=0):
                 raise MissingPlayerIdError(record_index=idx)
 
-            if rec.player_id not in checked_players:
-                existing_player = await self._repo.get_player_by_id(rec.player_id)
-                if existing_player is None:
-                    unverified_player = Player.create_unverified(
-                        player_id=rec.player_id,
-                        club_id=rec.club_id,
-                        category_id=rec.category_id or default_category_id,
-                        first_name=f"Player-{str(rec.player_id)[:8]}",
-                        last_name="Unverified",
-                    )
-                    await self._repo.auto_provision_player(unverified_player)
-                    provisioned_count += 1
-                checked_players[rec.player_id] = True
+            club_player_ids.setdefault(rec.club_id, set()).add(rec.player_id)
+            if rec.player_id not in player_category_map:
+                player_category_map[rec.player_id] = rec.category_id or default_category_id
 
+        # 2. Batch check existing players in OLAP warehouse per club
+        new_players_to_provision: list[Player] = []
+        for club_id, pids in club_player_ids.items():
+            existing = await self._repo.get_players_by_ids(club_id, list(pids))
+            missing_ids = pids - set(existing.keys())
+
+            for pid in missing_ids:
+                cat_id = player_category_map.get(pid, default_category_id)
+                unverified_player = Player.create_unverified(
+                    player_id=pid,
+                    club_id=club_id,
+                    category_id=cat_id,
+                    first_name=f"Player-{str(pid)[:8]}",
+                    last_name="Unverified",
+                )
+                new_players_to_provision.append(unverified_player)
+
+        # 3. Batch auto-provision missing players
+        if new_players_to_provision:
+            await self._repo.auto_provision_players(new_players_to_provision)
+
+        # 4. Atomic batch insertion into Bronze layer
         inserted = await self._repo.insert_raw_records(records)
+
         return IngestionResult(
             records_processed=len(records),
             records_inserted=inserted,
-            players_provisioned=provisioned_count,
+            players_provisioned=len(new_players_to_provision),
         )

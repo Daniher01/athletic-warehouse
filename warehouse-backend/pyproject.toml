@@ -36,6 +36,11 @@ strict = true
 ignore_missing_imports = true
 warn_unused_configs = true
 
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
