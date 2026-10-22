@@ -3,6 +3,7 @@ from typing import Any
 
 import jwt
 from jwt import PyJWKClient, PyJWKClientError
+from jwt.types import Options
 
 from warehouse_backend.application.auth.interfaces import TokenVerifierPort
 from warehouse_backend.domain.auth.exceptions import (
@@ -39,9 +40,14 @@ class KeycloakJwtVerifier(TokenVerifierPort):
             signing_key = self.jwk_client.get_signing_key_from_jwt(token)
 
             # 2. Decode unverified header/claims to determine issuer
+            unverified_options: Options = {
+                "verify_signature": False,
+                "verify_exp": False,
+                "verify_aud": False,
+            }
             unverified_claims = jwt.decode(
                 token,
-                options={"verify_signature": False, "verify_exp": False, "verify_aud": False},
+                options=unverified_options,
             )
             token_issuer = unverified_claims.get("iss", "").rstrip("/")
 
@@ -50,18 +56,19 @@ class KeycloakJwtVerifier(TokenVerifierPort):
                     f"Invalid token issuer: '{token_issuer}'. Expected one of {self.valid_issuers}"
                 )
 
+            verification_options: Options = {
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iss": True,
+                # Custom audience check below to support multiple client formats
+                "verify_aud": False,
+            }
             payload = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
                 issuer=token_issuer,
-                options={
-                    "verify_signature": True,
-                    "verify_exp": True,
-                    "verify_iss": True,
-                    # Custom audience check below to support multiple client formats
-                    "verify_aud": False,
-                },
+                options=verification_options,
             )
 
             # 4. Audience validation if configured
