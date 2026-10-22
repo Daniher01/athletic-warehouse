@@ -1,0 +1,406 @@
+{
+  "id": "sports-club",
+  "realm": "sports-club",
+  "displayName": "Sports Club Data Platform",
+  "displayNameHtml": "<b>Sports Club</b> Data Platform",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 86400,
+  "ssoSessionMaxLifespan": 604800,
+  "roles": {
+    "realm": [
+      {
+        "id": "role-dept-admin",
+        "name": "dept_admin",
+        "description": "Department administrator - access management, templates, and audit",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "id": "role-dept-ingestor",
+        "name": "dept_ingestor",
+        "description": "Department data ingestor - upload files and execute ingestion webhooks",
+        "composite": false,
+        "clientRole": false
+      },
+      {
+        "id": "role-dept-analyst",
+        "name": "dept_analyst",
+        "description": "Department analyst - query metrics and view BI dashboards",
+        "composite": false,
+        "clientRole": false
+      }
+    ]
+  },
+  "groups": [
+    {
+      "id": "group-departamentos",
+      "name": "Departamentos",
+      "path": "/Departamentos",
+      "subGroups": [
+        {
+          "id": "group-medico",
+          "name": "Medico",
+          "path": "/Departamentos/Medico",
+          "attributes": {
+            "department_id": [
+              "medico"
+            ],
+            "department_name": [
+              "Área Médica"
+            ]
+          }
+        },
+        {
+          "id": "group-preparacion-fisica",
+          "name": "Preparacion-Fisica",
+          "path": "/Departamentos/Preparacion-Fisica",
+          "attributes": {
+            "department_id": [
+              "preparacion-fisica"
+            ],
+            "department_name": [
+              "Preparación Física y Rendimiento"
+            ]
+          }
+        },
+        {
+          "id": "group-scouting",
+          "name": "Scouting",
+          "path": "/Departamentos/Scouting",
+          "attributes": {
+            "department_id": [
+              "scouting"
+            ],
+            "department_name": [
+              "Scouting y Análisis de Rivales"
+            ]
+          }
+        },
+        {
+          "id": "group-cantera",
+          "name": "Cantera",
+          "path": "/Departamentos/Cantera",
+          "attributes": {
+            "department_id": [
+              "cantera"
+            ],
+            "department_name": [
+              "Fútbol Base / Cantera"
+            ]
+          }
+        },
+        {
+          "id": "group-direccion-deportiva",
+          "name": "Direccion-Deportiva",
+          "path": "/Departamentos/Direccion-Deportiva",
+          "attributes": {
+            "department_id": [
+              "direccion-deportiva"
+            ],
+            "department_name": [
+              "Dirección Deportiva y Secretaría Técnica"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "id": "scope-athletic-rbac",
+      "name": "athletic-rbac",
+      "description": "Sports Club RBAC, Department mappings, Roles, and Identity claims",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true"
+      },
+      "protocolMappers": [
+        {
+          "id": "mapper-sub",
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "id",
+            "claim.name": "sub",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "id": "mapper-username",
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "id": "mapper-email",
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "email",
+            "claim.name": "email",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "id": "mapper-realm-roles",
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "id": "mapper-groups",
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "id": "mapper-audience",
+          "name": "warehouse-backend-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "warehouse-backend-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": [
+    "role_list",
+    "profile",
+    "email",
+    "web-origins",
+    "athletic-rbac"
+  ],
+  "clients": [
+    {
+      "id": "client-warehouse-backend-api",
+      "clientId": "warehouse-backend-api",
+      "name": "Warehouse Backend API Resource Server",
+      "description": "FastAPI Resource Server validating Bearer JWT and JWKS",
+      "rootUrl": "http://localhost:8000",
+      "baseUrl": "http://localhost:8000",
+      "enabled": true,
+      "bearerOnly": false,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "secret": "backend-api-secret-123",
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "web-origins",
+        "role_list",
+        "profile",
+        "email",
+        "athletic-rbac"
+      ]
+    },
+    {
+      "id": "client-tableflow-app",
+      "clientId": "tableflow-app",
+      "name": "Tableflow Web Application",
+      "description": "Tableflow Frontend Ingestor utilizing Auth Code Flow + PKCE",
+      "rootUrl": "http://localhost:3001",
+      "baseUrl": "http://localhost:3001",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://localhost:3001/*",
+        "http://127.0.0.1:3001/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "+"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "role_list",
+        "profile",
+        "email",
+        "athletic-rbac"
+      ]
+    },
+    {
+      "id": "client-tableflow-service-m2m",
+      "clientId": "tableflow-service-m2m",
+      "name": "Tableflow Service M2M Ingestor",
+      "description": "M2M Client Credentials Service Account for Automated Webhooks",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "secret": "tableflow-m2m-secret-xyz",
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "web-origins",
+        "role_list",
+        "profile",
+        "email",
+        "athletic-rbac"
+      ]
+    },
+    {
+      "id": "client-metabase-app",
+      "clientId": "metabase-app",
+      "name": "Metabase BI Application",
+      "description": "Metabase BI OIDC / SSO Integration Client",
+      "rootUrl": "http://localhost:3000",
+      "baseUrl": "http://localhost:3000",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "secret": "metabase-client-secret-789",
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "+"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "role_list",
+        "profile",
+        "email",
+        "athletic-rbac"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "user-dr-garcia",
+      "username": "dr_garcia",
+      "email": "garcia@sportsclub.internal",
+      "firstName": "Iñigo",
+      "lastName": "García",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test_password_123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "dept_ingestor"
+      ],
+      "groups": [
+        "/Departamentos/Medico"
+      ]
+    },
+    {
+      "id": "user-coach-mikel",
+      "username": "coach_mikel",
+      "email": "mikel@sportsclub.internal",
+      "firstName": "Mikel",
+      "lastName": "Arrieta",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test_password_123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "dept_analyst"
+      ],
+      "groups": [
+        "/Departamentos/Preparacion-Fisica"
+      ]
+    },
+    {
+      "id": "user-admin",
+      "username": "admin_user",
+      "email": "admin@sportsclub.internal",
+      "firstName": "Admin",
+      "lastName": "Club",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test_password_123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "dept_admin",
+        "dept_ingestor",
+        "dept_analyst"
+      ],
+      "groups": [
+        "/Departamentos/Direccion-Deportiva"
+      ]
+    }
+  ]
+}
