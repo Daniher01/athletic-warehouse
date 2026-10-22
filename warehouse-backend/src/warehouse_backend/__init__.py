@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from warehouse-backend!")
+from warehouse_backend.main import app, main
+
+__all__ = ["app", "main"]
