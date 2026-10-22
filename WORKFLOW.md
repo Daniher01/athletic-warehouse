@@ -1,8 +1,8 @@
 ---
 tracker:
   kind: linear
-  provider:
-    project_slug: "athletic-warehouse"
+  project_slug: "athletic-warehouse"
+  api_key: "$LINEAR_API_KEY"
   active_states:
     - "Spec Review"
     - "Ready"
