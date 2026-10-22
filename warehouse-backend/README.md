@@ -24,3 +24,12 @@ uv run ruff format --check
 # Type Checker
 uv run mypy .
 ```
+
+## API Testing with Bruno
+
+A pre-configured [Bruno](https://www.usebruno.com/) collection is located in `tests/bruno/`:
+- `health.bru`: Check `/api/v1/health`
+- `ingest-tableflow.bru`: Test POST `/api/v1/ingest/tableflow` with sample wellness payload
+- `ingest-tableflow-invalid.bru`: Test validation error (HTTP 422) on missing player identity
+- `list-wellness.bru`: Query GET `/api/v1/wellness` with filtering and pagination
+

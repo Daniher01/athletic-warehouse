@@ -82,6 +82,22 @@ Once running, verify ClickHouse health:
   - Default Password: `clickhouse_password`
   - Database: `athletic_warehouse`
 
+#### Exploring ClickHouse with GUI Tools (DbGate / DBeaver)
+
+You can explore schemas, tables, and partitions visually using **DbGate** or **DBeaver**:
+- **DbGate Connection Settings:**
+  - Engine: `ClickHouse`
+  - Host: `localhost`
+  - Port: `8123` (HTTP) or `9000` (Native TCP)
+  - User: `default`
+  - Password: `clickhouse_password`
+  - Database: `athletic_warehouse`
+- **DBeaver Connection Settings:**
+  - Driver: `ClickHouse` (Official JDBC Driver)
+  - Host: `localhost` | Port: `8123`
+  - Database: `athletic_warehouse` | Username: `default` | Password: `clickhouse_password`
+
+
 To inspect the tables directly from the command line:
 
 ```bash
@@ -154,6 +170,13 @@ Verify the streaming Materialized View extracted and typed the record into `fact
 ```bash
 curl "http://localhost:8000/api/v1/wellness?club_id=11111111-1111-1111-1111-111111111111&metric_date=2026-10-22"
 ```
+
+#### 3. Test Endpoints with Bruno
+
+You can also test all API endpoints visually using [Bruno](https://www.usebruno.com/):
+- Open Bruno -> **Open Collection** -> select `warehouse-backend/tests/bruno`.
+- Run requests: `Health Check`, `Ingest Tableflow Records`, `Ingest Tableflow (Invalid)`, and `List Wellness Records`.
+
 
 ---
 
